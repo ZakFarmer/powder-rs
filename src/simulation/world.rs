@@ -69,14 +69,18 @@ impl World {
         } else {
             self.y = self.y + 1;
         }
+        
+        let mut new_particles: Vec<Particle> = Vec::new();
 
         for particle in &mut self.particles {
             if particle.position_current.y >= HEIGHT as f32 {
-                self.particles = self.particles.retain(|p| p.created != particle.created);
                 continue;
             }
 
             particle.update(delta_time);
+            new_particles.push(particle.clone());
         }
+
+        self.particles = new_particles;
     }
 }
