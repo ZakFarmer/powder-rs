@@ -1,2 +1,2 @@
-# powdertoy-rs
-A Rust implementation of The Powder Toy
+# powder-rs
+A falling-sand simulation game inspired by [The Powder Toy](https://powdertoy.co.uk/).
