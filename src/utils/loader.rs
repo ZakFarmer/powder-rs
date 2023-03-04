@@ -23,7 +23,10 @@ pub(crate) fn load_assets() -> Assets {
 
     let mut sprites = HashMap::new();
 
-    sprites.insert(Particle, load_pcx(include_bytes!("../../assets/particle.pcx")));
+    sprites.insert(
+        Particle,
+        load_pcx(include_bytes!("../../assets/particle.pcx")),
+    );
 
     Assets { sprites }
 }

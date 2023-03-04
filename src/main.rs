@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 #![forbid(unsafe_code)]
 
+mod config;
 mod simulation;
 mod utils;
 
@@ -72,7 +73,10 @@ fn main() -> Result<(), Error> {
     let mut brush_size: i8 = 1;
 
     let assets: Assets = utils::loader::load_assets();
-    let particle_sprite_data = assets.sprites().get(&utils::graphics::Frame::Particle).unwrap();
+    let particle_sprite_data = assets
+        .sprites()
+        .get(&utils::graphics::Frame::Particle)
+        .unwrap();
 
     let particle_sprite: Sprite = Sprite {
         pixels: particle_sprite_data.2.to_vec(),
@@ -119,8 +123,8 @@ fn main() -> Result<(), Error> {
                 for x in 0..brush_size {
                     for y in 0..brush_size {
                         world.add_particle(
-                            mouse_x / 6.0 + x as f32,
-                            mouse_y / 6.0 + y as f32,
+                            (mouse_x / 6.0 + x as f32),
+                            (mouse_y / 6.0 + y as f32),
                             variants[selected_particle_index as usize],
                         );
                     }
@@ -178,7 +182,7 @@ fn main() -> Result<(), Error> {
                 paused = !paused;
             }
         }
-        
+
         while lag >= MS_PER_UPDATE {
             world.update(MS_PER_UPDATE * 0.01);
             lag -= MS_PER_UPDATE;

@@ -1,13 +1,22 @@
+use std::sync::{Arc, Mutex};
+
 use cgmath::Vector2;
+use quadtree_rs::{Quadtree, area::{AreaBuilder, Area}, point::Point, entry::Entry};
 use rand::{rngs::ThreadRng, Rng};
 
-use crate::{utils::{graphics::{Sprite, blit}, geometry::Point}, HEIGHT};
+use crate::{
+    config::CONFIG,
+    utils::{
+        graphics::{blit, Sprite},
+    },
+    HEIGHT, simulation::physics::gravity::g,
+};
 
-use super::particle::{Particle, ParticleVariant, PhysicsType};
+use super::{particle::{Particle, ParticleVariant, PhysicsType}};
 
 pub struct World {
     y: i32,
-    particles: Vec<Particle>,
+    particle_tree: Quadtree<u64, Particle>,
 }
 
 impl World {
@@ -18,46 +27,55 @@ impl World {
         // Create a new Vector2 for the position
         let position: Vector2<f32> = Vector2::new(x, y);
 
-        // Create a new particle
-        self.particles.push(Particle::new(
+        let particle = Particle::new(
             crate::COLORS[rng.gen_range(0..7)],
             PhysicsType::DYNAMIC,
-            Vector2::new(0.0, 0.0),
+            Vector2::new(0.0, g),
             position,
             position,
             ParticleVariant::STNE,
-        ));
+        );
+
+        let particle_region: Area<u64> = AreaBuilder::default()
+            .anchor(Point {x: x as u64, y: y as u64})
+            .dimensions((1, 1))
+            .build().unwrap();
+
+        let val = self.particle_tree.insert(particle_region, particle);
 
         true
     }
 
     /// Clear all particles from the world
-    pub fn clear_particles(&mut self) -> bool {
-        self.particles.clear();
-
-        true
+    pub fn clear_particles(&mut self) -> () {
+        self.particle_tree.reset()
     }
 
     pub fn new() -> Self {
+        let depth: usize = 12;
+        let quadtree: Quadtree<u64, Particle> = Quadtree::new(depth);
+
         Self {
             y: 0,
-            particles: vec![],
+            particle_tree: quadtree,
         }
     }
 
     pub fn draw(&self, frame: &mut [u8], sprite: &Sprite) {
         // Draw the particles
-        for particle in &self.particles {
+        for node in self.particle_tree.iter() {
+            let particle: Particle = node.value_ref().clone();
+
             if particle.position_current.y >= HEIGHT as f32 {
                 continue;
             }
-            
+
             let x = particle.position_current.x as usize;
             let y = particle.position_current.y as usize;
             //let r = particle.radius as u32;
 
             let color = particle.color;
-            let pos = Point::new(x, y);
+            let pos = crate::utils::geometry::Point::new(x, y);
 
             blit(frame, &pos, sprite, color);
         }
@@ -69,18 +87,31 @@ impl World {
         } else {
             self.y = self.y + 1;
         }
-        
-        let mut new_particles: Vec<Particle> = Vec::new();
 
-        for particle in &mut self.particles {
-            if particle.position_current.y >= HEIGHT as f32 {
-                continue;
+        self.particle_tree.modify_all(|p| {
+            if p.position_current.y > HEIGHT as f32 - 1.0 {
+                if CONFIG.barriers_on {
+                    p.position_current.y = HEIGHT as f32 - 1.0;
+                    p.position_old.y = HEIGHT as f32 - 1.0;
+
+                    p.acceleration.y = 0.0;
+                } else {
+                    // If the particle is out of bounds, we shouldn't update it any longer
+                    return;
+                }
             }
 
-            particle.update(delta_time);
-            new_particles.push(particle.clone());
-        }
+            let velocity: Vector2<f32> = p.position_current - p.position_old;
 
-        self.particles = new_particles;
+            p.position_old = p.position_current;
+
+            p.position_current = p.position_current
+                + velocity 
+                + p.acceleration 
+                * delta_time 
+                * delta_time;
+
+            p.acceleration = Vector2::new(0.0, g);
+        });
     }
 }

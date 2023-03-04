@@ -23,8 +23,7 @@ impl TimeStep {
     pub fn delta(&mut self) -> f32 {
         let current_time: Instant = Instant::now();
 
-        let delta: f32 = current_time.duration_since(self.last_time)
-            .as_micros() as f32 * 0.001;
+        let delta: f32 = current_time.duration_since(self.last_time).as_micros() as f32 * 0.001;
 
         self.last_time = current_time;
         self.delta_time = delta;

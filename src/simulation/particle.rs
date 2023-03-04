@@ -6,13 +6,13 @@ use crate::utils;
 
 use super::physics::gravity::g;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PhysicsType {
     DYNAMIC,
     STATIC,
 }
 
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ParticleVariant {
     WOOD,
     STNE,
@@ -22,7 +22,7 @@ pub enum ParticleVariant {
     C4,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Particle {
     pub created: u64,
     ///
@@ -57,10 +57,11 @@ impl Particle {
     }
 
     pub fn update(&mut self, delta_time: f32) {
-        let velocity: Vector2<f32> = self.position_current - self.position_old;
+        let velocity: Vector2<f32> = (self.position_current - self.position_old);
 
         self.position_old = self.position_current;
-        self.position_current = self.position_current + velocity + self.acceleration * delta_time * delta_time;
+        self.position_current =
+            (self.position_current + velocity + self.acceleration * delta_time * delta_time);
 
         self.acceleration = Vector2::new(0.0, g);
     }
