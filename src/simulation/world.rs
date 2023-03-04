@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use cgmath::Vector2;
-use quadtree_rs::{Quadtree, area::{AreaBuilder, Area}, point::Point, entry::Entry};
+use lazy_static::lazy_static;
+use quadtree_rs::{Quadtree, area::{AreaBuilder, Area}, point::Point, entry::Entry, iter::Query};
 use rand::{rngs::ThreadRng, Rng};
 
 use crate::{
@@ -9,13 +10,15 @@ use crate::{
     utils::{
         graphics::{blit, Sprite},
     },
-    HEIGHT, simulation::physics::gravity::g,
+    HEIGHT, simulation::physics::gravity::g, WIDTH,
 };
 
 use super::{particle::{Particle, ParticleVariant, PhysicsType}};
 
 pub struct World {
-    y: i32,
+    culling_area: Area<u64>,
+    safe_area: Area<u64>,
+    ///
     particle_tree: Quadtree<u64, Particle>,
 }
 
@@ -52,11 +55,22 @@ impl World {
     }
 
     pub fn new() -> Self {
+        let culling_area: Area<u64> = AreaBuilder::default()
+            .anchor(Point {x: 0, y: HEIGHT as u64 - 1})
+            .dimensions((WIDTH as u64, 99999))
+            .build().unwrap();
+
+        let safe_area: Area<u64> = AreaBuilder::default()
+            .anchor(Point {x: 0, y: 0})
+            .dimensions((WIDTH as u64, HEIGHT as u64))
+            .build().unwrap();
+
         let depth: usize = 12;
         let quadtree: Quadtree<u64, Particle> = Quadtree::new(depth);
 
         Self {
-            y: 0,
+            culling_area,
+            safe_area,
             particle_tree: quadtree,
         }
     }
@@ -70,11 +84,10 @@ impl World {
                 continue;
             }
 
-            let x = particle.position_current.x as usize;
-            let y = particle.position_current.y as usize;
-            //let r = particle.radius as u32;
+            let x: usize = particle.position_current.x as usize;
+            let y: usize = particle.position_current.y as usize;
 
-            let color = particle.color;
+            let color: [u8; 4] = particle.color;
             let pos = crate::utils::geometry::Point::new(x, y);
 
             blit(frame, &pos, sprite, color);
@@ -82,25 +95,15 @@ impl World {
     }
 
     pub fn update(&mut self, delta_time: f32) {
-        if self.y == 200 {
-            self.y = 0;
-        } else {
-            self.y = self.y + 1;
-        }
-
-        self.particle_tree.modify_all(|p| {
-            if p.position_current.y > HEIGHT as f32 - 1.0 {
-                if CONFIG.barriers_on {
-                    p.position_current.y = HEIGHT as f32 - 1.0;
-                    p.position_old.y = HEIGHT as f32 - 1.0;
-
-                    p.acceleration.y = 0.0;
-                } else {
-                    // If the particle is out of bounds, we shouldn't update it any longer
-                    return;
-                }
+        self.particle_tree.retain(|p| {
+            if p.position_current.y >= HEIGHT as f32 {
+                return true;
             }
 
+            false
+        });
+
+        self.particle_tree.modify(self.safe_area, |p| {        
             let velocity: Vector2<f32> = p.position_current - p.position_old;
 
             p.position_old = p.position_current;
