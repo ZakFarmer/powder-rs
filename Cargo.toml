@@ -8,7 +8,11 @@ edition = "2021"
 [dependencies]
 bytemuck = { version = "1.14.0", features = ["derive"] }
 env_logger = "0.10.0"
+midir = "0.9.1"
+pod-enum = "0.1.0"
 pollster = "0.3.0"
 rand = "0.8.5"
+rayon = "1.8.0"
+rodio = "0.17.1"
 wgpu = { version = "0.17.0", features = ["spirv"] }
 winit = "0.28.6"

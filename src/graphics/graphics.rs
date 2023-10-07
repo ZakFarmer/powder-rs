@@ -1,9 +1,18 @@
-use std::borrow::Cow;
+// src/graphics/graphics.rs
+
+use std::{borrow::Cow, sync::{Arc, Mutex}};
 
 use wgpu::{InstanceDescriptor, SurfaceConfiguration, DeviceDescriptor, util::DeviceExt};
 use winit::{window::Window, event::WindowEvent};
 
-use crate::{simulation::particle::Particle, math::vector::Vector2d};
+use crate::{simulation::{particle::Particle, simulation::Simulation}, math::vector::Vector2d, SCALE_FACTOR};
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct InstanceData {
+    position: [f32; 2],
+    scale: f32,
+}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -34,7 +43,7 @@ impl GraphicsContext {
         // Initialise surface
         let surface = unsafe {
             instance.create_surface(&window)
-        }.unwrap();
+        }.expect("[GRAPHICS] Failed to create surface.");
 
         // Initialise adapter
         let adapter = instance.request_adapter(
@@ -43,7 +52,7 @@ impl GraphicsContext {
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             }
-        ).await.unwrap();
+        ).await.expect("[GRAPHICS] Failed to request adapter.");
 
         // Initialise device and queue
         let (device, queue) = adapter.request_device(&DeviceDescriptor {
@@ -54,7 +63,7 @@ impl GraphicsContext {
                 wgpu::Limits::default()
             },
             label: None
-        }, None).await.expect("Failed to create device");
+        }, None).await.expect("[GRAPHICS] Failed to request device.");
 
         // Configure surface
         let surface_caps = surface.get_capabilities(&adapter);
@@ -102,6 +111,15 @@ impl GraphicsContext {
                     array_stride: std::mem::size_of::<ParticleVertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![0 => Float32x2],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<InstanceData>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![
+                        // Assuming that the InstanceData has a vec2<f32> position and a float scale
+                        1 => Float32x2,  // instance position
+                        2 => Float32,    // instance scale
+                    ],
                 }],
             },
             fragment: Some(wgpu::FragmentState {
@@ -114,7 +132,7 @@ impl GraphicsContext {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::PointList,
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
@@ -159,62 +177,79 @@ impl GraphicsContext {
         todo!()
     }
 
-    pub fn render(&mut self, particles: &[Particle]) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, simulation: Arc<Mutex<Simulation>>) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
+    
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
-
-        let vertex_data: Vec<ParticleVertex> = particles.iter()
-            .map(|p| { 
-                let ndc: Vector2d = p.position.to_ndc(self.size.width as f32, self.size.height as f32);
-
-                ParticleVertex { position: ndc.into()}
-            })
-            .collect();
-
+    
+        let scale_factor = (SCALE_FACTOR * SCALE_FACTOR) / self.size.width as f32;
+    
+        let quad_vertices = [
+            ParticleVertex { position: [-0.5, -0.5] },
+            ParticleVertex { position: [ 0.5, -0.5] },
+            ParticleVertex { position: [-0.5,  0.5] },
+            ParticleVertex { position: [ 0.5,  0.5] },
+            ParticleVertex { position: [-0.5,  0.5] },
+            ParticleVertex { position: [ 0.5, -0.5] },
+        ];
+    
+        // Prepare the particle instances data
+        let mut instance_data = Vec::new();
+    
+        for (x, column) in simulation.lock().unwrap().grid.iter().enumerate() {
+            for (y, cell) in column.iter().enumerate() {
+                if let Some(particle) = cell {
+                    let position = Vector2d::new(x as f32, y as f32);
+    
+                    // Append the position to instance_data
+                    instance_data.push(InstanceData {
+                        position: position.to_ndc(self.size.width as f32, self.size.height as f32).into(),
+                        scale: scale_factor, // or vary scale based on particle type
+                    });
+                }
+            }
+        }
+    
         let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertex_data),
+            contents: bytemuck::cast_slice(&quad_vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
-
+    
+        let instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+    
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                color_attachments: &[
-                    // This is what @location(0) in the fragment shader targets
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(
-                                wgpu::Color {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                }
-                            ),
-                            store: true,
-                        }
-                    })
-                ],
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+                        store: true,
+                    }
+                })],
                 depth_stencil_attachment: None,
             });
-
-            render_pass.set_pipeline(&self.render_pipeline); // 2.
+    
+            render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            render_pass.draw(0..vertex_data.len() as u32, 0..1);
+            render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+            render_pass.draw(0..quad_vertices.len() as u32, 0..instance_data.len() as u32);
         }
-
+    
         let command_buffer = encoder.finish();
         self.queue.submit(Some(command_buffer));
-
+    
         output.present();
-
+    
         Ok(())
-    }
+    }    
 }

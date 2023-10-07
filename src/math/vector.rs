@@ -1,3 +1,5 @@
+// src/math/vector.rs
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vector2d {
@@ -25,7 +27,7 @@ impl Vector2d {
     pub fn to_ndc(&self, screen_width: f32, screen_height: f32) -> Vector2d {
         Vector2d {
             x: 2.0 * self.x / screen_width - 1.0,
-            y: 1.0 - 2.0 * self.y / screen_height, // y is inverted as the origin is at the top-left
+            y: 1.0 - 2.0 * self.y / screen_height,
         }
     }
 }
@@ -47,6 +49,13 @@ impl std::ops::Add for Vector2d {
     }
 }
 
+impl std::ops::AddAssign for Vector2d {
+    fn add_assign(&mut self, rhs: Vector2d) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
 impl std::ops::Sub for Vector2d {
     type Output = Vector2d;
 
@@ -55,6 +64,13 @@ impl std::ops::Sub for Vector2d {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
         }
+    }
+}
+
+impl std::ops::SubAssign for Vector2d {
+    fn sub_assign(&mut self, rhs: Vector2d) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
     }
 }
 
